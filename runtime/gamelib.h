@@ -31,8 +31,12 @@
 #define GAMELIB_FULL_ID_SIZE 96
 
 bool gamelib_old_cpu(void);  // runtime/gamelib.c: no AVX2 / FMA / BMI2 - the game code is built for x86-64-v2
+// runtime/gamelib.c: the CPU the game code is built for on this machine, as a -march name ("x86-64-v3" is the
+// release's; "x86-64-v2" for gamelib_old_cpu; on Linux an AMD Zen CPU gets its own, e.g. "znver4")
+const char *gamelib_cpu_tier(void);
 
-// The id a library for the game files in game_dir has (GAMELIB_ID[-v2]-<build ID>); false when exefs/main is unreadable.
+// The id a library for the game files in game_dir has (GAMELIB_ID[-<cpu tier>]-<build ID>; none for x86-64-v3); false
+// when exefs/main is unreadable.
 static inline bool gamelib_full_id(const char *game_dir, char *out, size_t size) {
     char path[1100];
     unsigned char hdr[0x60];
@@ -42,7 +46,11 @@ static inline bool gamelib_full_id(const char *game_dir, char *out, size_t size)
     bool ok = fread(hdr, 1, sizeof hdr, f) == sizeof hdr && !memcmp(hdr, "NSO0", 4);
     fclose(f);
     if (!ok) return false;
-    int n = snprintf(out, size, "%s%s-", GAMELIB_ID, gamelib_old_cpu() ? "-v2" : "");  // (an x86-64-v2 build: its own)
+    // (a build for another CPU: its own id, so it is rebuilt, never loaded, when the CPU or the tuning changes)
+    const char *tier = gamelib_cpu_tier();
+    if (!strcmp(tier, "x86-64-v2")) tier = "v2";            // (the id older builds gave it)
+    if (!strcmp(tier, "x86-64-v3")) tier = "";              // (the release's CPU, and other archs: no suffix)
+    int n = snprintf(out, size, "%s%s%s-", GAMELIB_ID, tier[0] ? "-" : "", tier);
     for (int i = 0; i < 8 && n + 2 < (int)size; i++) n += snprintf(out + n, size - n, "%02X", hdr[0x40 + i]);
     return true;
 }
