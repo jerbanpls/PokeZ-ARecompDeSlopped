@@ -76,6 +76,16 @@ ifeq ($(ARCH),x86_64)
 GENARCH  ?= -march=x86-64-v3  # as on Windows: AVX2 + FMA for the lifted FP/SIMD code (checked at startup)
 endif
 GENFLAGS += $(GENARCH) -fPIC
+# The game code of a source checkout is tuned for this machine's AMD Zen CPU, as the start screen's build does
+# (runtime/gamelib.c gamelib_cpu_tier; that one decides at run time, this one asks clang for the CPU it sees).
+# Only the objects make compiles here get it: GAMELIB_CFLAGS (what the shipped start screen compiles with) stays
+# x86-64-v3, so a release built on a Zen 5 never gives every player Zen 5 code. CPU_TUNING=generic: x86-64-v3 (then run
+# with LARECOMP_CPU_TUNING=generic too, or the library's id won't match).
+CPU_TUNING ?= auto
+ifeq ($(ARCH)$(CPU_TUNING)$(CROSS),x86_64auto)
+CPUTIER  := $(filter znver2 znver3 znver4 znver5,$(shell clang -march=native -\#\#\# -x c -c /dev/null 2>&1 | \
+              sed -n 's/.*"-target-cpu" "\([a-z0-9_-]*\)".*/\1/p'))
+endif
 OSFLAGS  := -Wno-format  # (%llx for uint64_t, which is unsigned long here: the same size)
 # shaderc as the system's pkg-config file names it (Arch / Fedora / AOSC ship only libshaderc_shared, issue #22);
 # without one -lshaderc (Debian / Ubuntu's libshaderc.so). SHADERC=... overrides it.
@@ -123,7 +133,9 @@ GAMELIB_ID := $(shell (cat $(GAMELIB_SRCS); echo '$(GENFLAGS)') | (shasum -a 256
 # The library's own id adds the game's main build ID (what `make gen` generated from: $(GEN)/main/main_build_id.txt),
 # so game code for another game version is never loaded (runtime/gamelib.h gamelib_full_id)
 GAMELIB_BUILD := $(shell cut -c1-16 $(GEN)/main/main_build_id.txt 2>/dev/null)
-GAMELIB_FULL_ID := $(GAMELIB_ID)-$(or $(GAMELIB_BUILD),unknown)
+GAMELIB_FULL_ID := $(GAMELIB_ID)$(if $(CPUTIER),-$(CPUTIER))-$(or $(GAMELIB_BUILD),unknown)
+# (the generated objects' own flags: GENFLAGS with this machine's CPU tier, see CPU_TUNING)
+GENFLAGS_LOCAL := $(if $(CPUTIER),$(patsubst -march=x86-64-v3,-march=$(CPUTIER),$(GENFLAGS)),$(GENFLAGS))
 # GAMELIB_BASE_ID: what every compiled piece of it depends on (the headers, the flags, the pinned compiler). The same
 # base keeps the start screen's earlier build pieces: only the pieces whose generated C changed are compiled again
 # (runtime/gamebuild.c). Another base: everything is compiled again.
@@ -139,11 +151,11 @@ all: $(EXE) $(if $(GEN_SRC),$(GAMELIB))
 
 $(B)/obj/%.o: $(GEN)/%.c runtime/cpu.h runtime/simd.h runtime/simd_fp.h
 	@mkdir -p $(dir $@)
-	@$(CC) $(GENFLAGS) -c $< -o $@
+	@$(CC) $(GENFLAGS_LOCAL) -c $< -o $@
 
 $(B)/obj/tools/gamelib_entry.o: tools/gamelib_entry.c $(GAMELIB_SRCS) $(wildcard $(GEN)/main/main_build_id.txt)
 	@mkdir -p $(dir $@)
-	$(CC) $(GENFLAGS) -DGAMELIB_ID='"$(GAMELIB_FULL_ID)"' -c $< -o $@
+	$(CC) $(GENFLAGS_LOCAL) -DGAMELIB_ID='"$(GAMELIB_FULL_ID)"' -c $< -o $@
 # (Makefile too: GAMELIB_ID hashes the flags, so a flags change - GENOPT - must rebuild the loader's copy of the id, as
 # it does gamebuild.o's; it didn't, and the start screen's build and the loader disagreed: the old library loaded)
 $(B)/rt/gamelib.o: $(GAMELIB_SRCS) Makefile

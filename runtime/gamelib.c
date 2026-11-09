@@ -28,6 +28,32 @@ bool gamelib_old_cpu(void) {
 #endif
 }
 
+// Linux x86-64: the game code is compiled on the player's machine anyway, so it is tuned for that CPU (AMD Zen 2 to
+// Zen 5: Steam Deck, ROG Ally / Legion Go, desktops). Zen 4 / 5 also get AVX-512, only where the OS has it on (a VM can
+// report the model with AVX-512 masked). LARECOMP_CPU_TUNING=generic keeps the release's x86-64-v3 (a copy of the data
+// folder taken to another PC). Windows keeps x86-64-v3: its slim zig ships a runtime built for that CPU only.
+const char *gamelib_cpu_tier(void) {
+#if defined(__x86_64__)
+    static const char *tier;
+    if (tier) return tier;
+    tier = "x86-64-v3";
+    if (gamelib_old_cpu()) return tier = "x86-64-v2";
+#if defined(__linux__)
+    const char *e = getenv("LARECOMP_CPU_TUNING");
+    if (e && !strcmp(e, "generic")) return tier;
+    bool avx512 = __builtin_cpu_supports("avx512f") && __builtin_cpu_supports("avx512bw") &&
+                  __builtin_cpu_supports("avx512vl") && __builtin_cpu_supports("avx512dq");
+    if (__builtin_cpu_is("znver5") && avx512) tier = "znver5";
+    else if (__builtin_cpu_is("znver4") && avx512) tier = "znver4";
+    else if (__builtin_cpu_is("znver3")) tier = "znver3";
+    else if (__builtin_cpu_is("znver2")) tier = "znver2";
+#endif
+    return tier;
+#else
+    return "";
+#endif
+}
+
 // The library's id file (<library>.id, written next to it by the build): its id (gamelib_full_id), read without
 // loading it.
 static bool id_matches(const char *lib, const char *want) {

@@ -59,9 +59,9 @@ static void log_system(void) {
     plat_os_name(os, sizeof os);
     char feat[96] = "";
 #if defined(__x86_64__)
-    snprintf(feat, sizeof feat, ", AVX2 %s FMA %s BMI2 %s -> game code for x86-64-%s",
+    snprintf(feat, sizeof feat, ", AVX2 %s FMA %s BMI2 %s -> game code for %s",
              __builtin_cpu_supports("avx2") ? "yes" : "no", __builtin_cpu_supports("fma") ? "yes" : "no",
-             __builtin_cpu_supports("bmi2") ? "yes" : "no", gamelib_old_cpu() ? "v2" : "v3");
+             __builtin_cpu_supports("bmi2") ? "yes" : "no", gamelib_cpu_tier());
 #endif
     rt_launcher_log("[system] ZA Recomp %s | %s | CPU: %s (%d threads%s) | RAM %d GB\n", rt_version(), os, cpu,
         SDL_GetNumLogicalCPUCores(), feat, (SDL_GetSystemRAM() + 512) / 1024);

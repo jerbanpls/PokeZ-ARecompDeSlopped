@@ -399,7 +399,11 @@ static void add_cflags(Args *a, const Tools *t, bool giant) {
     char buf[1024];
     snprintf(buf, sizeof buf, "%s", GAMELIB_CFLAGS);
     for (char *f = strtok(buf, " "); f; f = strtok(NULL, " ")) {
-        if (!strcmp(f, "-march=x86-64-v3") && gamelib_old_cpu()) f = (char *)"-march=x86-64-v2";
+        char march[64];  // (the CPU tier: x86-64-v2 for an old CPU, on Linux the AMD Zen generation)
+        if (!strcmp(f, "-march=x86-64-v3") && gamelib_cpu_tier()[0]) {
+            snprintf(march, sizeof march, "-march=%s", gamelib_cpu_tier());
+            f = march;
+        }
         if (giant && f[0] == '-' && f[1] == 'O') f = (char *)"-O0";
         if (t->zig && !strncmp(f, "-march=", 7)) {
             char cpu[128];
@@ -467,9 +471,10 @@ bool gamebuild_run(const char *game_dir, const GameBuildOpts *o, char *why, size
     // Compiler/header/flag changes invalidate every object; entry always rebuilds because it embeds the library id.
     const char *inputs[] = {input_paths[2], input_paths[3], input_paths[4], input_paths[5], t.cc};
     // The compiler's contents identify it, so relocating the app does not discard reusable objects.
-    snprintf(spec, sizeof spec, "LASBUILD3\n%s\n%s\n%s\nzig=%d pointer=%d%s%s\n", GAMELIB_BASE_ID,
+    snprintf(spec, sizeof spec, "LASBUILD3\n%s\n%s\n%s\nzig=%d pointer=%d%s%s cpu=%s\n", GAMELIB_BASE_ID,
              GAMELIB_CFLAGS, GAMELIB_SHARED, t.zig, (int)sizeof(void *),  // (+ the Linux zig target: objects from
-             t.zig && ZIG_TARGET[0] ? " target=" : "", t.zig ? ZIG_TARGET : "");  // before it are rebuilt once)
+             t.zig && ZIG_TARGET[0] ? " target=" : "", t.zig ? ZIG_TARGET : "",  // before it are rebuilt once)
+             gamelib_cpu_tier());  // (+ the CPU tier: another CPU's objects are compiled again)
     if (o->progress) o->progress(0, "Checking completed build files...");
     bool resuming = build_cache_resumable(game_dir);  // (a cancelled or interrupted build; read before open marks this one)
     BuildCache *cache = build_cache_open(game_dir, spec, inputs, 5, why, why_size);
@@ -513,6 +518,7 @@ bool gamebuild_run(const char *game_dir, const GameBuildOpts *o, char *why, size
     LOG("[gamebuild] generator %s%s%s, compiler %s%s, %d jobs\n", t.gen, t.gen_script[0] ? " " : "", t.gen_script,
         t.cc, t.zig ? " cc" : "", o->jobs);
     if (gamelib_old_cpu()) LOG("[gamebuild] CPU without AVX2 / FMA / BMI2: built for x86-64-v2\n");
+    else LOG("[gamebuild] game code tuned for cpu=%s\n", gamelib_cpu_tier()[0] ? gamelib_cpu_tier() : "x86-64-v3");
 
     // 1. the generator, both modules at once; their finished files are compiled while it goes on
     Gen gens[2] = {{.name = "main"}, {.name = "sdk"}};
