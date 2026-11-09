@@ -1,0 +1,41 @@
+# Maintainer: the owner of this checkout
+# ZA Recomp for Arch Linux and CachyOS (Steam Deck, ROG Ally and other handhelds too): repacks the release .zip
+# (tools/za/dist-linux.sh makes it: "ZA Recomp-<version>-linux-x86_64.zip") into /opt/zarecomp, as the .deb does.
+#
+# Use: copy the zip next to this file under the name zarecomp-<version>-linux-x86_64.zip (no spaces), set pkgver to
+# that version, then:   makepkg -si
+# No game code or game files are in the package: the start screen reads your own .xci / .nsp with your prod.keys and
+# builds the game code on this machine. Data, saves and settings live in ~/.local/share/zarecomp.
+pkgname=zarecomp
+pkgver=0.1.20
+pkgrel=1
+pkgdesc='Pokémon Legends: Z-A, recompiled for PC (bring your own game files)'
+arch=('x86_64')
+url='https://github.com/Hexveil404/PokeZ-ARecomp'
+license=('MIT')
+# the C++ runtime and the system's Vulkan loader (a bundled loader would not find the GPU drivers); SDL3 opens X11,
+# Wayland and the audio server at run time from the libraries bundled in /opt/zarecomp/lib
+depends=('glibc' 'gcc-libs' 'vulkan-icd-loader')
+optdepends=('vulkan-radeon: AMD GPUs (Steam Deck, ROG Ally, Legion Go)'
+            'vulkan-intel: Intel GPUs'
+            'nvidia-utils: NVIDIA GPUs')
+options=('!strip' '!debug')   # the bundled zig and helpers must stay as shipped; lasrecomp keeps its symbols for backtraces
+source=("zarecomp-${pkgver}-linux-x86_64.zip")
+sha256sums=('SKIP')           # a zip you built yourself: put its sha256sum here to pin it
+
+package() {
+    local top
+    top=$(find "$srcdir" -mindepth 1 -maxdepth 1 -type d -name 'ZA Recomp-*-linux-x86_64' | head -n 1)
+    [ -d "$top/usr/bin" ] || { echo "PKGBUILD: the zip has no ZA Recomp-<version>-linux-x86_64/usr/bin folder"; return 1; }
+
+    install -d "$pkgdir/opt/zarecomp" "$pkgdir/usr/bin" "$pkgdir/usr/share/applications" \
+        "$pkgdir/usr/share/icons/hicolor/1024x1024/apps" "$pkgdir/usr/share/pixmaps" "$pkgdir/usr/share/licenses/$pkgname"
+    cp -a "$top/usr/bin" "$top/usr/lib" "$pkgdir/opt/zarecomp/"
+
+    printf '#!/bin/sh\nexec /opt/zarecomp/bin/lasrecomp "$@"\n' > "$pkgdir/usr/bin/zarecomp"
+    chmod 755 "$pkgdir/usr/bin/zarecomp"
+    sed 's/^Exec=.*/Exec=zarecomp/' "$top/zarecomp.desktop" > "$pkgdir/usr/share/applications/zarecomp.desktop"
+    install -m644 "$top/zarecomp.png" "$pkgdir/usr/share/icons/hicolor/1024x1024/apps/zarecomp.png"
+    install -m644 "$top/zarecomp.png" "$pkgdir/usr/share/pixmaps/zarecomp.png"
+    install -m644 "$top/usr/bin/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
